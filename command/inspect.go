@@ -48,6 +48,9 @@ func (c *InspectCommand) RunContext(ctx context.Context, cla *InspectArgs) int {
 		return ret
 	}
 
+	diags := c.DetectBundledPlugins(packerStarter)
+	writeDiags(c.Ui, nil, diags)
+
 	// here we ignore init diags to allow unknown variables to be used
 	_ = packerStarter.Initialize(packer.InitializeOptions{})
 

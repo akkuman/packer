@@ -87,7 +87,10 @@ func (c *BuildCommand) RunContext(buildCtx context.Context, cla *BuildArgs) int 
 		return ret
 	}
 
-	diags := packerStarter.Initialize(packer.InitializeOptions{})
+	diags := c.DetectBundledPlugins(packerStarter)
+	writeDiags(c.Ui, nil, diags)
+
+	diags = packerStarter.Initialize(packer.InitializeOptions{})
 	ret = writeDiags(c.Ui, nil, diags)
 	if ret != 0 {
 		return ret

@@ -65,7 +65,10 @@ func (c *ValidateCommand) RunContext(ctx context.Context, cla *ValidateArgs) int
 		return 0
 	}
 
-	diags := packerStarter.Initialize(packer.InitializeOptions{
+	diags := c.DetectBundledPlugins(packerStarter)
+	writeDiags(c.Ui, nil, diags)
+
+	diags = packerStarter.Initialize(packer.InitializeOptions{
 		SkipDatasourcesExecution: !cla.EvaluateDatasources,
 	})
 	ret = writeDiags(c.Ui, nil, diags)

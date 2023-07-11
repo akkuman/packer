@@ -63,6 +63,9 @@ func (c *ConsoleCommand) RunContext(ctx context.Context, cla *ConsoleArgs) int {
 		return ret
 	}
 
+	diags := c.DetectBundledPlugins(packerStarter)
+	writeDiags(c.Ui, nil, diags)
+
 	_ = packerStarter.Initialize(packer.InitializeOptions{})
 
 	// Determine if stdin is a pipe. If so, we evaluate directly.

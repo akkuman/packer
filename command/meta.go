@@ -8,8 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"strings"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclparse"
 	packersdk "github.com/hashicorp/packer-plugin-sdk/packer"
 	"github.com/hashicorp/packer-plugin-sdk/template"
@@ -178,4 +181,126 @@ func (m *Meta) GetConfigFromJSON(cla *MetaArgs) (packer.Handler, int) {
 		ret = 1
 	}
 	return core, ret
+}
+
+func (m *Meta) DetectBundledPlugins(handler packer.Handler) hcl.Diagnostics {
+	var plugins []string
+
+	switch h := handler.(type) {
+	case *packer.Core:
+		plugins = m.detectBundledPluginsJSON(h)
+	case *hcl2template.PackerConfig:
+		// enable packer to start plugins requested in required_plugins.
+		diags := h.DetectPluginBinaries()
+		if diags.HasErrors() {
+			return diags
+		}
+
+		plugins = m.detectBundledPluginsHCL2(handler.(*hcl2template.PackerConfig))
+	}
+
+	if len(plugins) == 0 {
+		return nil
+	}
+
+	buf := &strings.Builder{}
+	buf.WriteString("This configuration uses some bundled plugins, which is a feature that will be removed from Packer in an upcoming version.\n\n")
+	switch handler.(type) {
+	case *packer.Core:
+		buf.WriteString("Plase consider installing those plugins with the 'packer plugins install' command\n\n")
+
+		for _, plugin := range plugins {
+			fmt.Fprintf(buf, "* packer plugins install %s\n", plugin)
+		}
+
+		buf.WriteString("\nAlternatively, if you change your templates to HCL2, you may use 'packer init' with a `required_plugins` block in your template.\n\n")
+	}
+
+	buf.WriteString("In HCL2, consider adding the following section to your template:\n")
+	buf.WriteString(generateRequiredPluginsBlock(plugins))
+	buf.WriteString("\nThen run 'packer init' to manage installation of the plugins")
+
+	return hcl.Diagnostics{
+		&hcl.Diagnostic{
+			Severity: hcl.DiagWarning,
+			Summary:  "Bundled plugins used",
+			Detail:   buf.String(),
+		},
+	}
+}
+
+func (m *Meta) detectBundledPluginsJSON(core *packer.Core) []string {
+	log.Printf("[PLUGIN] Running DetectBundledPluginsJSON")
+
+	bundledPlugins := map[string]struct{}{}
+
+	tmpl := core.Template
+	if tmpl == nil {
+		panic("No template parsed already")
+	}
+
+	for _, b := range tmpl.Builders {
+		builderType := fmt.Sprintf("packer-builder-%s", b.Type)
+		if bundledStatus[builderType] {
+			bundledPlugins[builderType] = struct{}{}
+		}
+	}
+
+	for _, p := range tmpl.Provisioners {
+		provisionerType := fmt.Sprintf("packer-provisioner-%s", p.Type)
+		if bundledStatus[provisionerType] {
+			bundledPlugins[provisionerType] = struct{}{}
+		}
+	}
+
+	for _, pps := range tmpl.PostProcessors {
+		for _, pp := range pps {
+			postProcessorType := fmt.Sprintf("packer-post-processor-%s", pp.Type)
+			if bundledStatus[postProcessorType] {
+				bundledPlugins[postProcessorType] = struct{}{}
+			}
+		}
+	}
+
+	return compileBundledPluginList(bundledPlugins)
+}
+
+func (m *Meta) detectBundledPluginsHCL2(config *hcl2template.PackerConfig) []string {
+	log.Printf("[PLUGIN] Running DetectBundledPluginsJSON")
+
+	bundledPlugins := map[string]struct{}{}
+
+	for _, b := range config.Builds {
+		for _, src := range b.Sources {
+			builderType := fmt.Sprintf("packer-builder-%s", src.Type)
+			if bundledStatus[builderType] {
+				bundledPlugins[builderType] = struct{}{}
+			}
+		}
+
+		for _, p := range b.ProvisionerBlocks {
+			provisionerType := fmt.Sprintf("packer-provisioner-%s", p.PType)
+			if bundledStatus[provisionerType] {
+				bundledPlugins[provisionerType] = struct{}{}
+			}
+		}
+
+		for _, pps := range b.PostProcessorsLists {
+			for _, pp := range pps {
+				postProcessorType := fmt.Sprintf("packer-post-processor-%s", pp.PType)
+				if bundledStatus[postProcessorType] {
+					bundledPlugins[postProcessorType] = struct{}{}
+				}
+			}
+		}
+	}
+
+	for _, ds := range config.Datasources {
+		dsType := fmt.Sprintf("packer-datasource-%s", ds.Type)
+		if bundledStatus[dsType] {
+			bundledPlugins[dsType] = struct{}{}
+		}
+	}
+
+	return compileBundledPluginList(bundledPlugins)
 }
